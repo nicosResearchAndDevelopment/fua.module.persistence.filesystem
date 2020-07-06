@@ -1,9 +1,76 @@
 const
-    assert = require("assert"),
-    fs = require("fs"),
     regex_semantic_id = /^https?:\/\/\S+$|^\w+:\S+$/,
     regex_nonempty_key = /\S/,
-    array_primitive_types = Object.freeze(["boolean", "number", "string"]);
+    array_primitive_types = Object.freeze(["boolean", "number", "string"]),
+    /** {@link https://nodejs.org/api/errors.html#errors_common_system_errors Common System Errors} */
+    Fs_errCodes = {
+        access_denied: "EACCES", // An attempt was made to access a file in a way forbidden by its file access permissions.
+        operation_denied: "EPERM", // An attempt was made to perform an operation that requires elevated privileges.
+        not_found: "ENOENT", // Commonly raised by fs operations to indicate that a component of the specified pathname does not exist. No entity (file or directory) could be found by the given path.
+        do_exist: "EEXIST", // An existing file was the target of an operation that required that the target not exist.
+        timed_out: "ETIMEDOUT" // A connect or send request failed because the connected party did not properly respond after a period of time.
+    },
+    /** {@link https://nodejs.org/api/fs.html#fs_file_system_flags File System Flags} */
+    Fs_sysFlags = {
+        read: "r", // Open file for reading. An exception occurs if the file does not exist.
+        write: "r+", // Open file for reading and writing. An exception occurs if the file does not exist.
+        create: "wx", // Open file for writing. The file is created (if it does not exist) or truncated (if it exists).
+        delete: "r+"
+    };
+
+/**
+ * @param {*} value 
+ * @param {String} errMsg
+ * @param {Class<Error>} [errType=Error] 
+ * @throws {Error<errType>} if the value is falsy
+ */
+function assert(value, errMsg, errType = Error) {
+    if (!value) {
+        const err = new errType(`filesystem_adapter : ${errMsg}`);
+        Error.captureStackTrace(err, assert);
+        throw err;
+    }
+} // assert
+
+/**
+ * Returns true, if the value does include at least one nonspace character.
+ * @param {String} value 
+ * @returns {Boolean}
+ */
+function is_nonempty_key(value) {
+    return regex_nonempty_key.test(value);
+} // is_nonempty_key
+
+/**
+ * This is an IRI or a prefixed IRI.
+ * @typedef {String|IRI} SemanticID
+ * 
+ * Returns true, if the value is a complete or prefixed IRI.
+ * This function is important to distinct values from IRIs and
+ * to make sure, subject, predicate and object have valid ids.
+ * @param {SemanticID} value 
+ * @returns {Boolean}
+ */
+function is_semantic_id(value) {
+    return regex_semantic_id.test(value);
+} // is_semantic_id
+
+/**
+ * This are the only values neo4j can store on a node.
+ * @typedef {null|Boolean|Number|String|Array<Boolean>|Array<Number>|Array<String>} PrimitiveValue 
+ * 
+ * Returns true, if the value is primitive. This function
+ * is important to make sure, a value can be stored in neo4j.
+ * @param {PrimitiveValue} value 
+ * @returns {Boolean}
+ */
+function is_primitive_value(value) {
+    return value === null
+        || array_primitive_types.includes(typeof value)
+        || (Array.isArray(value) && array_primitive_types.some(
+            type => value.every(arrValue => typeof arrValue === type)
+        ));
+} // is_primitive_value
 
 /**
  * This is the general concept of a persistence adapter.
@@ -26,67 +93,62 @@ module.exports = function (config) {
 
     assert(typeof config === "object" && config !== null,
         "The config for a persistence adapter must be a nonnull object.");
+    assert(typeof config["fs"] === "object" && config !== null && typeof config["fs"].readFile === "function",
+        "The config.fs must contain the filesystem module.");
+    assert(typeof config["path"] === "object" && config !== null && typeof config["path"].join === "function",
+        "The config.path must contain the path module.");
     assert(is_nonempty_key(config["root"]),
-        "The config.root must contain a filesystem path.");
+        "The config.root must contain the path to a persistent folder.");
+
+    /** @alias module:fs */
+    const Fs = config["fs"];
+
+    /** @alias module:path */
+    const Path = config["path"];
 
     /** @type {String} */
     const root_folder = config["root"];
 
     /**
-     * Returns true, if the value does include at least one nonspace character.
-     * @param {String} value 
-     * @returns {Boolean}
+     * @param {String} name 
+     * @returns {String}  
      */
-    function is_nonempty_key(value) {
-        return regex_nonempty_key.test(value);
-    } // is_nonempty_key
-
-    /**
-     * This is an IRI or a prefixed IRI.
-     * @typedef {String|IRI} SemanticID
-     * 
-     * Returns true, if the value is a complete or prefixed IRI.
-     * This function is important to distinct values from IRIs and
-     * to make sure, subject, predicate and object have valid ids.
-     * @param {SemanticID} value 
-     * @returns {Boolean}
-     */
-    function is_semantic_id(value) {
-        return regex_semantic_id.test(value);
-    } // is_semantic_id
-
-    /**
-     * This are the only values neo4j can store on a node.
-     * @typedef {null|Boolean|Number|String|Array<Boolean>|Array<Number>|Array<String>} PrimitiveValue 
-     * 
-     * Returns true, if the value is primitive. This function
-     * is important to make sure, a value can be stored in neo4j.
-     * @param {PrimitiveValue} value 
-     * @returns {Boolean}
-     */
-    function is_primitive_value(value) {
-        return value === null
-            || array_primitive_types.includes(typeof value)
-            || (Array.isArray(value) && array_primitive_types.some(
-                type => value.every(arrValue => typeof arrValue === type)
-            ));
-    } // is_primitive_value
+    function get_file_path(name) {
+        return Path.join(
+            root_folder,
+            Buffer.from(name).toString("base64") + ".json"
+        );
+    } // get_file_path
 
     /**
      * Uses the filesystem to make a method call and returns
      * the result as promise instead of using callbacks.
      * @async
-     * @param {string} method 
-     * @param  {...*} args 
+     * @param {String} method 
+     * @param {...*} args 
      * @returns {*}
      */
-    function request_filesystem(method, ...args) {
+    function request_fs(method, ...args) {
         return new Promise((resolve, reject) =>
-            fs[method](...args, (err, result) =>
+            Fs[method](...args, (err, result) =>
                 err ? reject(err) : resolve(result)
             )
         );
-    } // request_filesystem
+    } // request_fs
+
+    async function subject_to_json(subject) {
+        try {
+            const buffer = await request_fs(
+                "readFile",
+                get_file_path(subject),
+                Fs_sysFlags.read
+            );
+            return JSON.parse(buffer.toString());
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return null;
+            else throw err;
+        }
+    } // subject_to_json
 
     /**
      * TODO describe operation EXIST
@@ -97,11 +159,19 @@ module.exports = function (config) {
     async function operation_fs_exist(subject) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_exist - invalid {SemanticID} subject <${subject}>`);
+            `operation_exist : invalid {SemanticID} subject <${subject}>`);
 
-        // /** @type {Number} */
-        // const existsRecord = await request_filesystem("EXISTS", subject);
-        // return !!existsRecord;
+        try {
+            /** @type {{isFile: Function}} */
+            const statsRecord = await request_fs(
+                "stat",
+                get_file_path(subject)
+            );
+            return statsRecord.isFile();
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return false;
+            else throw err;
+        }
 
     } // operation_fs_exist
 
@@ -114,12 +184,23 @@ module.exports = function (config) {
     async function operation_fs_create(subject) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_create - invalid {SemanticID} subject <${subject}>`);
+            `operation_create : invalid {SemanticID} subject <${subject}>`);
 
-        // /** @type {Number} */
-        // const createRecord = await request_filesystem("HSETNX", subject, "@id", JSON.stringify(subject));
-        // if (createRecord) await request_filesystem("HSETNX", subject, "@type", JSON.stringify(["rdfs:Resource"]));
-        // return !!createRecord;
+        try {
+            await request_fs(
+                "writeFile",
+                get_file_path(subject),
+                JSON.stringify({
+                    "@id": subject,
+                    "@type": ["rdfs:Resource"]
+                }),
+                Fs_sysFlags.create
+            );
+            return true;
+        } catch (err) {
+            if (err.code === Fs_errCodes.do_exist) return false;
+            else throw err;
+        }
 
     } // operation_fs_create
 
@@ -132,15 +213,20 @@ module.exports = function (config) {
     async function operation_fs_read_subject(subject) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_read_subject - invalid {SemanticID} subject <${subject}>`);
+            `operation_read_subject : invalid {SemanticID} subject <${subject}>`);
 
-        // /** @type {Object<String>|null} */
-        // const readRecord = await request_filesystem("HGETALL", subject);
-        // if (readRecord) for (let key in readRecord) {
-        //     readRecord[key] = JSON.parse(readRecord[key]);
-        // } // if-for
-
-        // return readRecord;
+        try {
+            /** @type {Buffer} */
+            const readRecord = await request_fs(
+                "readFile",
+                get_file_path(subject),
+                Fs_sysFlags.read
+            );
+            return JSON.parse(readRecord.toString()) || null;
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return null;
+            else throw err;
+        }
 
     } // operation_fs_read_subject
 
@@ -153,11 +239,10 @@ module.exports = function (config) {
     async function operation_fs_read_type(subject) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_read_type - invalid {SemanticID} subject <${subject}>`);
+            `operation_read_type : invalid {SemanticID} subject <${subject}>`);
 
-        // /** @type {String|null} */
-        // const readRecord = await request_filesystem("HGET", subject, "@type");
-        // return readRecord ? JSON.parse(readRecord) : null;
+        const readResult = await operation_fs_read_subject(subject);
+        return readResult ? readResult["@type"] : null;
 
     } // operation_fs_read_type
 
@@ -174,23 +259,24 @@ module.exports = function (config) {
         if (key === "@type") return await operation_fs_read_type(subject);
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_read - invalid {SemanticID} subject <${subject}>`);
+            `operation_read : invalid {SemanticID} subject <${subject}>`);
 
         const isArray = Array.isArray(key);
         /** @type {Array<String>} */
         const keyArr = isArray ? key : [key];
 
         assert(keyArr.every(is_nonempty_key),
-            `filesystem_adapter - operation_read - {String|Array<String>} ${isArray ? "some " : ""}key <${key}> is empty`);
+            `operation_read : {String|Array<String>} ${isArray ? "some " : ""}key <${key}> is empty`);
 
-        // if (!(await operation_fs_exist(subject)))
-        //     return null;
+        const readResult = await operation_fs_read_subject(subject);
+        if (!readResult) return null;
 
-        // /** @type {Array<String|null>} */
-        // const readRecords = await request_filesystem("HMGET", subject, ...keyArr);
-        // const valueArr = readRecords.map(val => val ? JSON.parse(val) : null);
+        /** @type {Map<String, PrimitiveValue>} */
+        const valueMap = new Map(Object.entries(readResult));
+        /** @type {Array<PrimitiveValue>} */
+        const valueArr = keyArr.map(val => valueMap.has(val) ? valueMap.get(val) : null);
 
-        // return isArray ? valueArr : valueArr[0];
+        return isArray ? valueArr : valueArr[0];
 
     } // operation_fs_read
 
@@ -205,27 +291,39 @@ module.exports = function (config) {
     async function operation_fs_update_predicate(subject, predicate, object) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_update_predicate - invalid {SemanticID} subject <${subject}>`);
+            `operation_update_predicate : invalid {SemanticID} subject <${subject}>`);
         assert(is_semantic_id(predicate),
-            `filesystem_adapter - operation_update_predicate - invalid {SemanticID} predicate <${predicate}>`);
+            `operation_update_predicate : invalid {SemanticID} predicate <${predicate}>`);
         assert(is_semantic_id(object),
-            `filesystem_adapter - operation_update_predicate - invalid {SemanticID} object <${object}>`);
+            `operation_update_predicate : invalid {SemanticID} object <${object}>`);
 
-        // if (!(await operation_fs_exist(subject)))
-        //     return false;
-
-        // /** @type {Array<SemanticID>|null} */
-        // const prevObjects = await operation_fs_list(subject, predicate);
-
-        // const nextObjects = prevObjects
-        //     ? prevObjects.includes(object)
-        //         ? null
-        //         : [...prevObjects, object]
-        //     : [object];
-
-        // if (nextObjects)
-        //     await request_filesystem("HSET", subject, predicate, JSON.stringify(nextObjects));
-        // return true;
+        try {
+            const file_path = get_file_path(subject);
+            /** @type {Buffer} */
+            const readRecord = await request_fs(
+                "readFile",
+                file_path,
+                Fs_sysFlags.read
+            );
+            /** @type {Object} */
+            const json = JSON.parse(readRecord.toString()) || null;
+            if (!json) return false;
+            if (!Array.isArray(json[predicate]))
+                json[predicate] = [];
+            if (!json[predicate].includes(object)) {
+                json[predicate].push(object);
+                await request_fs(
+                    "writeFile",
+                    file_path,
+                    JSON.stringify(json),
+                    Fs_sysFlags.write
+                );
+            }
+            return true;
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return false;
+            else throw err;
+        }
 
     } // operation_fs_update_predicate
 
@@ -239,23 +337,39 @@ module.exports = function (config) {
     async function operation_fs_update_type(subject, type) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_update_type - invalid {SemanticID} subject <${subject}>`);
+            `operation_update_type : invalid {SemanticID} subject <${subject}>`);
 
         /** @type {Array<SemanticID>} */
         const typeArr = Array.isArray(type) ? type : [type];
 
         assert(typeArr.every(is_semantic_id),
-            `filesystem_adapter - operation_update_type - invalid {SemanticID|Array<SemanticID>} type <${type}>`);
+            `operation_update_type : invalid {SemanticID|Array<SemanticID>} type <${type}>`);
         if (!typeArr.includes("rdfs:Resource"))
             typeArr.push("rdfs:Resource");
 
-        // /** @type {Array<SemanticID>} */
-        // const prevTypes = await operation_fs_read_type(subject);
-        // if (!prevTypes) return false;
-
-        // if (typeArr.some(val => !prevTypes.includes(val)) || prevTypes.some(val => !typeArr.includes(val)))
-        //     await request_filesystem("HSET", subject, "@type", JSON.stringify(typeArr));
-        // return true;
+        try {
+            const file_path = get_file_path(subject);
+            /** @type {Buffer} */
+            const readRecord = await request_fs(
+                "readFile",
+                file_path,
+                Fs_sysFlags.read
+            );
+            /** @type {Object} */
+            const json = JSON.parse(readRecord.toString()) || null;
+            if (!json) return false;
+            json["@type"] = typeArr;
+            await request_fs(
+                "writeFile",
+                file_path,
+                JSON.stringify(json),
+                Fs_sysFlags.write
+            );
+            return true;
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return false;
+            else throw err;
+        }
 
     } // operation_fs_update_type
 
@@ -273,11 +387,35 @@ module.exports = function (config) {
         if (is_semantic_id(key) && is_semantic_id(value)) return await operation_fs_update_predicate(subject, key, value);
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_update - invalid {SemanticID} subject <${subject}>`);
+            `operation_update : invalid {SemanticID} subject <${subject}>`);
         assert(is_nonempty_key(key),
-            `filesystem_adapter - operation_update - {String|SemanticID} key <${key}> is empty`);
+            `operation_update : {String|SemanticID} key <${key}> is empty`);
         assert(is_primitive_value(value),
-            `filesystem_adapter - operation_update - invalid {PrimitiveValue|SemanticID} value <${value}>`);
+            `operation_update : invalid {PrimitiveValue|SemanticID} value <${value}>`);
+
+        try {
+            const file_path = get_file_path(subject);
+            /** @type {Buffer} */
+            const readRecord = await request_fs(
+                "readFile",
+                file_path,
+                Fs_sysFlags.read
+            );
+            /** @type {Object} */
+            const json = JSON.parse(readRecord.toString()) || null;
+            if (!json) return false;
+            json[key] = value;
+            await request_fs(
+                "writeFile",
+                file_path,
+                JSON.stringify(json),
+                Fs_sysFlags.write
+            );
+            return true;
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return false;
+            else throw err;
+        }
 
         // if (!(await operation_fs_exist(subject)))
         //     return false;
@@ -298,23 +436,41 @@ module.exports = function (config) {
     async function operation_fs_delete_predicate(subject, predicate, object) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_delete_predicate - invalid {SemanticID} subject <${subject}>`);
+            `operation_delete_predicate : invalid {SemanticID} subject <${subject}>`);
         assert(is_semantic_id(predicate),
-            `filesystem_adapter - operation_delete_predicate - invalid {SemanticID} predicate <${predicate}>`);
+            `operation_delete_predicate : invalid {SemanticID} predicate <${predicate}>`);
         assert(is_semantic_id(object),
-            `filesystem_adapter - operation_delete_predicate - invalid {SemanticID} object <${object}>`);
+            `operation_delete_predicate : invalid {SemanticID} object <${object}>`);
 
-        // /** @type {Array<SemanticID>|null} */
-        // const prevObjects = await operation_fs_list(subject, predicate);
-        // if (!prevObjects) return false;
-        // const objIndex = prevObjects.indexOf(object);
-        // if (objIndex < 0) return false;
+        try {
+            const file_path = get_file_path(subject);
+            /** @type {Buffer} */
+            const readRecord = await request_fs(
+                "readFile",
+                file_path,
+                Fs_sysFlags.read
+            );
+            /** @type {Object} */
+            const json = JSON.parse(readRecord.toString()) || null;
+            if (!json) return false;
+            if (!Array.isArray(json[predicate])) return true;
+            const index = json[predicate].indexOf(object);
+            if (index >= 0) {
+                if (json[predicate].length > 1) json[predicate].splice(index, 1);
+                else delete json[predicate];
+                await request_fs(
+                    "writeFile",
+                    file_path,
+                    JSON.stringify(json),
+                    Fs_sysFlags.write
+                );
+            }
 
-        // /** @type {Array<SemanticID>} */
-        // const nextObjects = prevObjects; nextObjects.splice(objIndex, 1);
-        // if (nextObjects.length > 0) await request_filesystem("HSET", subject, predicate, JSON.stringify(nextObjects));
-        // else await request_filesystem("HDEL", subject, predicate);
-        // return true;
+            return true;
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return false;
+            else throw err;
+        }
 
     } // operation_fs_delete_predicate
 
@@ -331,10 +487,19 @@ module.exports = function (config) {
         if (predicate || object) return await operation_fs_delete_predicate(subject, predicate, object);
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_delete - invalid {SemanticID} subject <${subject}>`);
+            `operation_delete : invalid {SemanticID} subject <${subject}>`);
 
-        // const deleteRecord = await request_filesystem("DEL", subject);
-        // return !!deleteRecord;
+        try {
+            await request_fs(
+                "unlink",
+                get_file_path(subject)
+            );
+
+            return true;
+        } catch (err) {
+            if (err.code === Fs_errCodes.not_found) return false;
+            else throw err;
+        }
 
     } // operation_fs_delete
 
@@ -348,12 +513,14 @@ module.exports = function (config) {
     async function operation_fs_list(subject, predicate) {
 
         assert(is_semantic_id(subject),
-            `filesystem_adapter - operation_list - invalid {SemanticID} subject <${subject}>`);
+            `operation_list : invalid {SemanticID} subject <${subject}>`);
         assert(is_semantic_id(predicate),
-            `filesystem_adapter - operation_list - invalid {SemanticID} predicate <${predicate}>`);
+            `operation_list : invalid {SemanticID} predicate <${predicate}>`);
 
-        // const listRecord = await request_filesystem("HGET", subject, predicate);
-        // return listRecord ? JSON.parse(listRecord) : null;
+        const readResult = await operation_fs_read_subject(subject);
+        return (readResult && Array.isArray(readResult[predicate]))
+            ? readResult[predicate]
+            : null;
 
     } // operation_fs_list
 
