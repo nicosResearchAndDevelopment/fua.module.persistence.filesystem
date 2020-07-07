@@ -1,0 +1,1 @@
+{"@id":"test:lorem_ipsum","@type":["rdfs:Resource"],"rdf:label":"Lorem Ipsum","test:property":["test:hello_world"]}

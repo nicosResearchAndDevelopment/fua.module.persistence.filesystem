@@ -13,7 +13,9 @@ const
     /** {@link https://nodejs.org/api/fs.html#fs_file_system_flags File System Flags} */
     Fs_sysFlags = {
         read: "r", // Open file for reading. An exception occurs if the file does not exist.
-        write: "r+", // Open file for reading and writing. An exception occurs if the file does not exist.
+        // write: "r+", // Open file for reading and writing. An exception occurs if the file does not exist.
+        // REM The problem with r+ was that if the file gets shorter, the rest of the file still shows up on overwrite
+        write: "w",
         create: "wx", // Open file for writing. The file is created (if it does not exist) or truncated (if it exists).
         delete: "r+"
     };
@@ -141,7 +143,7 @@ module.exports = function (config) {
             const buffer = await request_fs(
                 "readFile",
                 get_file_path(subject),
-                Fs_sysFlags.read
+                { flag: Fs_sysFlags.read }
             );
             return JSON.parse(buffer.toString());
         } catch (err) {
@@ -194,7 +196,7 @@ module.exports = function (config) {
                     "@id": subject,
                     "@type": ["rdfs:Resource"]
                 }),
-                Fs_sysFlags.create
+                { flag: Fs_sysFlags.create }
             );
             return true;
         } catch (err) {
@@ -220,7 +222,7 @@ module.exports = function (config) {
             const readRecord = await request_fs(
                 "readFile",
                 get_file_path(subject),
-                Fs_sysFlags.read
+                { flag: Fs_sysFlags.read }
             );
             return JSON.parse(readRecord.toString()) || null;
         } catch (err) {
@@ -303,7 +305,7 @@ module.exports = function (config) {
             const readRecord = await request_fs(
                 "readFile",
                 file_path,
-                Fs_sysFlags.read
+                { flag: Fs_sysFlags.read }
             );
             /** @type {Object} */
             const json = JSON.parse(readRecord.toString()) || null;
@@ -316,7 +318,7 @@ module.exports = function (config) {
                     "writeFile",
                     file_path,
                     JSON.stringify(json),
-                    Fs_sysFlags.write
+                    { flag: Fs_sysFlags.write }
                 );
             }
             return true;
@@ -353,7 +355,7 @@ module.exports = function (config) {
             const readRecord = await request_fs(
                 "readFile",
                 file_path,
-                Fs_sysFlags.read
+                { flag: Fs_sysFlags.read }
             );
             /** @type {Object} */
             const json = JSON.parse(readRecord.toString()) || null;
@@ -363,7 +365,7 @@ module.exports = function (config) {
                 "writeFile",
                 file_path,
                 JSON.stringify(json),
-                Fs_sysFlags.write
+                { flag: Fs_sysFlags.write }
             );
             return true;
         } catch (err) {
@@ -399,7 +401,7 @@ module.exports = function (config) {
             const readRecord = await request_fs(
                 "readFile",
                 file_path,
-                Fs_sysFlags.read
+                { flag: Fs_sysFlags.read }
             );
             /** @type {Object} */
             const json = JSON.parse(readRecord.toString()) || null;
@@ -409,19 +411,13 @@ module.exports = function (config) {
                 "writeFile",
                 file_path,
                 JSON.stringify(json),
-                Fs_sysFlags.write
+                { flag: Fs_sysFlags.write }
             );
             return true;
         } catch (err) {
             if (err.code === Fs_errCodes.not_found) return false;
             else throw err;
         }
-
-        // if (!(await operation_fs_exist(subject)))
-        //     return false;
-
-        // await request_filesystem("HSET", subject, key, JSON.stringify(value));
-        // return true;
 
     } // operation_fs_update
 
@@ -448,7 +444,7 @@ module.exports = function (config) {
             const readRecord = await request_fs(
                 "readFile",
                 file_path,
-                Fs_sysFlags.read
+                { flag: Fs_sysFlags.read }
             );
             /** @type {Object} */
             const json = JSON.parse(readRecord.toString()) || null;
@@ -462,7 +458,7 @@ module.exports = function (config) {
                     "writeFile",
                     file_path,
                     JSON.stringify(json),
-                    Fs_sysFlags.write
+                    { flag: Fs_sysFlags.write }
                 );
             }
 
