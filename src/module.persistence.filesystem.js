@@ -93,6 +93,10 @@ function is_primitive_value(value) {
  */
 module.exports = function (config) {
 
+    // TODO :: config
+    // Aufnahme eines persistance-prefix. " "" for space...
+    //
+
     assert(typeof config === "object" && config !== null,
         "The config for a persistence adapter must be a nonnull object.");
     assert(typeof config["fs"] === "object" && config !== null && typeof config["fs"].readFile === "function",
