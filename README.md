@@ -19,6 +19,5 @@ C:/graph/ -.
            - aasdfsafasfkljhqweruztzyxcvlksjhdflkasjhflkashjflkasjhflkasfhlaksjfh.ttl
            - ...
 ```
- 
 
 ---
