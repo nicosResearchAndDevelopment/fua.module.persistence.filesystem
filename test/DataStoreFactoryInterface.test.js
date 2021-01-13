@@ -4,7 +4,7 @@ const
 	dataFactory = require('../../module.persistence/src/module.persistence.js'),
 	datasetFactory = require('../../module.persistence.inmemory/src/module.persistence.inmemory.js');
 
-describe('module.persistence.filesystem : StoreFactoryInterface', function() {
+describe('module.persistence.filesystem : DataStoreFactoryInterface', function() {
 
 	// TODO
 
