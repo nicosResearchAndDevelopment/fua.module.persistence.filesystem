@@ -1,5 +1,7 @@
 # module.persistence.filesystem
 
+- [Persistence](../module.persistence)
+
 ## Interface
 
 ```ts
