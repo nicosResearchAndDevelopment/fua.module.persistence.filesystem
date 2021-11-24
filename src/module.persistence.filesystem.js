@@ -21,6 +21,7 @@ class FilesystemStore extends DataStore {
     /** @type {Map<string, FileDescription>} */
     #files         = new Map();
     #defaultFile   = '';
+    /** @type {Map<string, number>} */
     #updateTimesMS = new Map();
     #updateDelayMS = 1e3;
 
@@ -47,51 +48,55 @@ class FilesystemStore extends DataStore {
     } // FilesystemStore#constructor
 
     #scheduleFileUpdate(fileId) {
-        console.log('schedule updater for ' + fileId);
+        console.log('FilesystemStore##scheduleFileUpdate for ' + fileId);
         if (this.#updateTimesMS.has(fileId)) {
+            // If the updateTimes already contains the fileId, it means that the updater is already started.
+            // In that case just update the time, the updater will do the rest.
             this.#updateTimesMS.set(fileId, Date.now() + this.#updateDelayMS);
         } else {
+            // If the updateTimes does not contain the fileId, the time has to be set regardless.
+            // After that, a writable fileHandler needs to be acquired and the startFileUpdater method will do the rest.
+            // This fileHandler will be used as long as the updater is not finished to block the process from exiting early.
+            // After the updater is finished, the fileHandler will be closed be the updater itself to free resources.
             const file = this.#files.get(fileId);
             this.#updateTimesMS.set(fileId, Date.now() + this.#updateDelayMS);
-            fs.open(file.identifier, 'w').then((fileHandle) => {
-                let updateMS;
-                const startUpdater = () => {
-                    console.log('started updater for ' + fileId);
-                    updateMS = this.#updateTimesMS.get(fileId);
-                    setTimeout(async () => {
-                        try {
-                            updateMS = this.#updateTimesMS.get(fileId);
-                            if (Date.now() < updateMS) {
-                                startUpdater();
-                                return;
-                            }
-
-                            const fileContent = await rdf.serializeDataset(file.dataset, file.format);
-                            updateMS          = this.#updateTimesMS.get(fileId);
-                            if (Date.now() < updateMS) {
-                                startUpdater();
-                                return;
-                            }
-
-                            await fileHandle.writeFile(fileContent);
-                            updateMS = this.#updateTimesMS.get(fileId);
-                            if (Date.now() < updateMS) {
-                                startUpdater();
-                                return;
-                            }
-
-                            console.log('finished updater for ' + fileId);
-                            this.#updateTimesMS.delete(fileId);
-                            await fileHandle.close();
-                        } catch (err) {
-                            this.emit('error', err);
-                        }
-                    }, Math.max(0, updateMS - Date.now()));
-                };
-                startUpdater();
-            }).catch(err => this.emit('error', err));
+            fs.open(file.identifier, 'w')
+                .then(fileHandle => this.#startFileUpdater(file, fileHandle))
+                .catch(err => this.emit('error', err));
         }
     } // FilesystemStore##scheduleFileUpdate
+
+    #startFileUpdater(file, fileHandle) {
+        console.log('FilesystemStore##startFileUpdater for ' + file.id);
+        // Get the current updateTime and timeout for the rest of the time.
+        let updateTimeMS = this.#updateTimesMS.get(file.id);
+        setTimeout(async () => {
+            try {
+                // Check the updateTime again after waiting and start a new updater if necessary.
+                updateTimeMS = this.#updateTimesMS.get(file.id);
+                if (Date.now() < updateTimeMS) return this.#startFileUpdater(file, fileHandle);
+
+                // Serialize the files dataset in the correct format and check if the updateTime has changed in the meantime.
+                const fileContent = await rdf.serializeDataset(file.dataset, file.format);
+                updateTimeMS      = this.#updateTimesMS.get(file.id);
+                if (Date.now() < updateTimeMS) return this.#startFileUpdater(file, fileHandle);
+
+                // Write the serialized dataset back to the file and check if the updateTime has changed in the meantime.
+                await fileHandle.writeFile(fileContent);
+                updateTimeMS = this.#updateTimesMS.get(file.id);
+                if (Date.now() < updateTimeMS) return this.#startFileUpdater(file, fileHandle);
+
+                // At this point, no changes to the updateTime has occurred so the updateTime can be deleted
+                // and the fileHandler be closed to let scheduleFileUpdate start a fresh updater again.
+                this.#updateTimesMS.delete(file.id);
+                await fileHandle.close();
+            } catch (err) {
+                // In case of an error in the serialization or the file write, the fileHandler still needs to be closed.
+                this.emit('error', err);
+                await fileHandle.close();
+            }
+        }, Math.max(0, updateTimeMS - Date.now()));
+    } // FilesystemStore##startFileUpdater
 
     async size() {
         this.#ready || await this.#readyPromise;

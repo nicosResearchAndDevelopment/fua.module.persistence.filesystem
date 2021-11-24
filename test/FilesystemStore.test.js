@@ -6,31 +6,28 @@ const
     context                         = require('./data/context.json'),
     {DataFactory}                   = require('@nrd/fua.module.persistence'),
     FilesystemStore                 = require('../src/module.persistence.filesystem.js'),
-    sleep                           = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    sleep                           = (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+    emptyTestFile                   = path.join(__dirname, 'data/empty.ttl');
 
 describe('module.persistence.filesystem', function () {
 
-    let store, quad_1, quad_2;
+    let factory, store, quad_1, quad_2;
     before('construct a FilesystemStore and two quads', async function () {
-        const
-            factory   = new DataFactory(context),
-            data_path = path.join(__dirname, 'data/empty.ttl');
-        await fs.writeFile(data_path, '');
-
-        store  = new FilesystemStore({
+        factory = new DataFactory(context);
+        store   = new FilesystemStore({
             default: 'file://empty.ttl',
             load:    {
                 '@id':            'file://empty.ttl',
-                'dct:identifier': data_path,
+                'dct:identifier': emptyTestFile,
                 'dct:format':     'text/turtle'
             }
         }, factory);
-        quad_1 = factory.quad(
+        quad_1  = factory.quad(
             factory.namedNode('http://example.com/subject'),
             factory.namedNode('http://example.com/predicate'),
             factory.namedNode('http://example.com/object')
         );
-        quad_2 = factory.quad(
+        quad_2  = factory.quad(
             quad_1.subject,
             quad_1.predicate,
             factory.literal('Hello World', 'en')
@@ -92,6 +89,7 @@ describe('module.persistence.filesystem', function () {
     after('wait a sec before finishing', async function () {
         this.timeout(3e3);
         await sleep(2e3);
+        await fs.writeFile(emptyTestFile, '');
     });
 
 });
