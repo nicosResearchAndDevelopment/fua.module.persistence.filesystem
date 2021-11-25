@@ -7,21 +7,22 @@ const
     {DataFactory}                   = require('@nrd/fua.module.persistence'),
     FilesystemStore                 = require('../src/module.persistence.filesystem.js'),
     sleep                           = (ms) => new Promise(resolve => setTimeout(resolve, ms)),
-    emptyTestFile                   = path.join(__dirname, 'data/empty.ttl');
+    emptyTestFile                   = path.join(__dirname, 'data/empty.ttl'),
+    options                         = {
+        defaultFile: 'file://empty.ttl',
+        loadFiles:   {
+            '@id':            'file://empty.ttl',
+            'dct:identifier': emptyTestFile,
+            'dct:format':     'text/turtle'
+        }
+    };
 
 describe('module.persistence.filesystem', function () {
 
     let factory, store, quad_1, quad_2;
     before('construct a FilesystemStore and two quads', async function () {
         factory = new DataFactory(context);
-        store   = new FilesystemStore({
-            default: 'file://empty.ttl',
-            load:    {
-                '@id':            'file://empty.ttl',
-                'dct:identifier': emptyTestFile,
-                'dct:format':     'text/turtle'
-            }
-        }, factory);
+        store   = new FilesystemStore(options, factory);
         quad_1  = factory.quad(
             factory.namedNode('http://example.com/subject'),
             factory.namedNode('http://example.com/predicate'),

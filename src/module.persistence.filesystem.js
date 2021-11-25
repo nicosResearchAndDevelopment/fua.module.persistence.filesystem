@@ -27,11 +27,14 @@ class FilesystemStore extends DataStore {
 
     constructor(options, factory) {
         super(options, factory);
-        assert(options.load, 'FilesystemStore#constructor : expected options.load to contain a load config');
-        assert(options.default, 'FilesystemStore#constructor : expected options.default to be a string');
-        this.#defaultFile  = options.default;
+
+        const {defaultFile, loadFiles} = options;
+        assert(util.isString(defaultFile), 'FilesystemStore#constructor : expected defaultFile to be a string', TypeError);
+        assert(util.isObject(loadFiles), 'FilesystemStore#constructor : expected loadFiles to be an object', TypeError);
+
+        this.#defaultFile  = defaultFile;
         this.#readyPromise = (async () => {
-            const resultArr = await rdf.loadDataFiles(options.load, factory);
+            const resultArr = await rdf.loadDataFiles(loadFiles, factory);
             for (let file of resultArr) {
                 if (file.dataset) {
                     assert(!this.#files.has(file.id), 'FilesystemStore#constructor : expected file IDs to be unique');
@@ -39,9 +42,8 @@ class FilesystemStore extends DataStore {
                 }
             }
             assert(this.#files.size > 0, 'FilesystemStore#constructor : expected at least one file to be loaded');
-            assert(this.#files.has(options.default), 'FilesystemStore#constructor : expected files to contain the default');
-        })();
-        this.#readyPromise.then(() => {
+            assert(this.#files.has(defaultFile), 'FilesystemStore#constructor : expected files to contain the default');
+        })().then(() => {
             this.#ready        = true;
             this.#readyPromise = null;
         });
