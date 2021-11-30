@@ -50,7 +50,7 @@ class FilesystemStore extends DataStore {
     } // FilesystemStore#constructor
 
     #scheduleFileUpdate(fileId) {
-        console.log('FilesystemStore##scheduleFileUpdate for ' + fileId);
+        // console.log('FilesystemStore##scheduleFileUpdate for ' + fileId);
         if (this.#updateTimesMS.has(fileId)) {
             // If the updateTimes already contains the fileId, it means that the updater is already started.
             // In that case just update the time, the updater will do the rest.
@@ -69,7 +69,7 @@ class FilesystemStore extends DataStore {
     } // FilesystemStore##scheduleFileUpdate
 
     #startFileUpdater(file, fileHandle) {
-        console.log('FilesystemStore##startFileUpdater for ' + file.id);
+        // console.log('FilesystemStore##startFileUpdater for ' + file.id);
         // Get the current updateTime and timeout for the rest of the time.
         let updateTimeMS = this.#updateTimesMS.get(file.id);
         setTimeout(async () => {
