@@ -7,9 +7,9 @@
     "src/*"
   ],
   "dependencies": {
-    "@nrd/fua.core.util": "1.0.0",
-    "@nrd/fua.module.rdf": "1.0.0",
-    "@nrd/fua.module.persistence": "1.0.0"
+    "@nrd/fua.core.util": "^1.0.0",
+    "@nrd/fua.module.rdf": "^1.0.0",
+    "@nrd/fua.module.persistence": "^1.0.0"
   },
   "devDependencies": {
     "mocha": "^8.2.1",
