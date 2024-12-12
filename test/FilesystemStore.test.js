@@ -4,7 +4,7 @@ const
     path                            = require('path'),
     fs                              = require('fs/promises'),
     context                         = require('./data/context.json'),
-    {DataFactory}                   = require('@nrd/fua.module.persistence'),
+    {DataFactory}                   = require('@fua/module.persistence'),
     FilesystemStore                 = require('../src/module.persistence.filesystem.js'),
     sleep                           = (ms) => new Promise(resolve => setTimeout(resolve, ms)),
     emptyTestFile                   = path.join(__dirname, 'data/empty.ttl'),

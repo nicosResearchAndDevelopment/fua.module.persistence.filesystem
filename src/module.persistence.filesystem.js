@@ -1,10 +1,10 @@
 const
-    util        = require('@nrd/fua.core.util'),
+    util        = require('@fua/core.util'),
     assert      = new util.Assert('module.persistence.filesystem'),
     path        = require('path'),
     fs          = require('fs/promises'),
-    rdf         = require('@nrd/fua.module.rdf'),
-    {DataStore} = require('@nrd/fua.module.persistence');
+    rdf         = require('@fua/module.rdf'),
+    {DataStore} = require('@fua/module.persistence');
 
 /**
  * @typedef {object} FileDescription
